@@ -41,6 +41,13 @@
     return out;
   };
   MockRange.prototype.setFormulasR1C1 = function (f) { return this.setValues(f); };
+  MockRange.prototype.clearContent = function () {
+    for (var i = 0; i < this.nr; i++) {
+      var row = this.s.rows[this.r - 1 + i];
+      if (row) for (var j = 0; j < this.nc; j++) row[this.c - 1 + j] = '';
+    }
+    return this;
+  };
   MockRange.prototype.setFontWeight = function () { return this; };
   MockRange.prototype.setNumberFormat = function () { return this; };
   MockRange.prototype.sort = function (specs) {
@@ -66,7 +73,9 @@
   root.__mockSpreadsheet = ss;
   root.SpreadsheetApp = { getActiveSpreadsheet: function () { return ss; } };
   root.LockService = { getScriptLock: function () { return { waitLock: function () {}, releaseLock: function () {} }; } };
+  var uuid = 0;
   root.Utilities = {
+    getUuid: function () { return 'id-' + (++uuid); },
     formatDate: function (d, tz, pattern) {
       var j = new Date(d.getTime() + JST);
       var p = function (n) { return ('0' + n).slice(-2); };
