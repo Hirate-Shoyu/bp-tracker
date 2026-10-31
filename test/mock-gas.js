@@ -48,6 +48,22 @@
     }
     return this;
   };
+  MockRange.prototype.createTextFinder = function (text) {
+    var range = this;
+    var finder = {
+      matchEntireCell: function () { return finder; },
+      replaceAllWith: function (v) {
+        var n = 0;
+        range.s.rows.forEach(function (row) {
+          if (!row) return;
+          var from = range.nc ? range.c - 1 : 1, to = range.nc ? from + range.nc : 2; // getRange('B:B') は B 列として扱う
+          for (var j = from; j < to; j++) if (row[j] === text) { row[j] = v; n++; }
+        });
+        return n;
+      }
+    };
+    return finder;
+  };
   MockRange.prototype.setFontWeight = function () { return this; };
   MockRange.prototype.setNumberFormat = function () { return this; };
   MockRange.prototype.sort = function (specs) {

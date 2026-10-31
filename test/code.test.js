@@ -87,7 +87,7 @@ test('薬の登録：新規登録で継続中の前の期間が前日で終わ�
   const bp = plain(d.periods.filter((p) => p.type === 'bp').map((p) => [p.dose, p.start, p.end]));
   assert.deepStrictEqual(bp, [['5mg', '2026-09-01', '2026-10-14'], ['10mg', '2026-10-15', null]]);
   const rows = g.__mockSpreadsheet.getSheetByName('薬の登録').rows.slice(1).map((r) => r[1] + r[3]);
-  assert.deepStrictEqual(plain(rows), ['降圧剤5mg', '降圧剤10mg', '高脂血症の薬2.5mg']);
+  assert.deepStrictEqual(plain(rows), ['降圧剤5mg', '降圧剤10mg', '脂質異常症治療薬2.5mg']);
 });
 
 test('薬の登録：期間の重なり・入力不備はエラー、編集と削除ができる', () => {
@@ -225,4 +225,21 @@ test('グラフ画像は本文幅いっぱいに縦横比を保って貼る', ()
   g.createMonthlyChartPdf([{ title: 't', image: PNG }], '2015-2026');
   const img = g.__docs[0].items.find((x) => x.type === 'p' && x.p.images.length).p.images[0];
   assert.strictEqual(img.height, Math.round((595.28 - 72) * 0.5));
+});
+
+test('以前の表示名「高脂血症の薬」の登録も読め、シートの表記は新しい名前に置き換わる', () => {
+  const g = load();
+  const ss = g.__mockSpreadsheet;
+  const med = ss.insertSheet('薬の登録');
+  med.rows = [['ID', '種類', '薬品名', '量', '開始日', '終了日', '更新日時'],
+    ['old-1', '高脂血症の薬', 'ピタバスタチン', '1mg', '2021-03-01', '2024-01-31', '']];
+  const daily = ss.insertSheet('日次');
+  daily.rows = [['日付', '体重(kg)', '降圧剤 服用', '降圧剤 薬品名', '降圧剤 量', '高脂血症の薬 服用', '高脂血症の薬 薬品名', '高脂血症の薬 量', '更新日時'],
+    ['2022-01-05', 66, '', '', '', '服用', 'ピタバスタチン', '1mg', '']];
+  const d = g.getData();
+  assert.deepStrictEqual(plain(d.periods.map((p) => [p.type, p.name])), [['lipid', 'ピタバスタチン']]);
+  assert.strictEqual(med.rows[1][1], '脂質異常症治療薬');
+  assert.strictEqual(daily.rows[0][5], '脂質異常症治療薬 服用');
+  assert.strictEqual(d.daily[0].meds.lipid, true);
+  assert.strictEqual(d.medTypes[1].label, '脂質異常症治療薬');
 });

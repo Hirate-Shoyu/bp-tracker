@@ -4,7 +4,7 @@
  * シート「記録」  : 1行 = 1日の朝 or 夜 の血圧・脈拍
  *   A:日付 B:時間帯 C-E:1回目(最高/最低/脈拍) F-H:2回目 I-K:平均(数式) L:メモ M:更新日時
  * シート「日次」  : 1行 = 1日 の体重と服薬
- *   A:日付 B:体重 C-E:降圧剤(服用/薬品名/量) F-H:高脂血症の薬(服用/薬品名/量) I:更新日時
+ *   A:日付 B:体重 C-E:降圧剤(服用/薬品名/量) F-H:脂質異常症治療薬(服用/薬品名/量) I:更新日時
  * シート「薬の登録」: 1行 = 1つの薬の使用期間
  *   A:ID B:種類 C:薬品名 D:量 E:開始日 F:終了日(空=継続中) G:更新日時
  * 月平均と PDF 作成は Report.gs
@@ -16,9 +16,10 @@ var MED_SHEET_NAME = '薬の登録';
 var SESSIONS = ['朝', '夜'];
 
 // 薬の種類。key は内部用、label はシートと画面の表示用。
+// oldLabels は以前の表示名。シートに残っていても読めるようにし、見つけたら label に置き換える。
 var MED_TYPES = [
-  { key: 'bp', label: '降圧剤' },
-  { key: 'lipid', label: '高脂血症の薬' }
+  { key: 'bp', label: '降圧剤', oldLabels: [] },
+  { key: 'lipid', label: '脂質異常症治療薬', oldLabels: ['高脂血症の薬'] }
 ];
 var TAKEN = '服用';
 var NOT_TAKEN = '未服用';
@@ -208,10 +209,17 @@ function getDailySheet_() {
 }
 
 function getMedSheet_() {
-  return ensureSheet_(MED_SHEET_NAME, MED_HEADERS, function (sheet) {
+  var sheet = ensureSheet_(MED_SHEET_NAME, MED_HEADERS, function (sheet) {
     sheet.getRange('E:F').setNumberFormat('yyyy-mm-dd');
     sheet.getRange('G:G').setNumberFormat('yyyy-mm-dd hh:mm');
   });
+  // 種類の列に以前の表示名が残っていれば、今の表示名に置き換える
+  MED_TYPES.forEach(function (t) {
+    t.oldLabels.forEach(function (old) {
+      sheet.getRange('B:B').createTextFinder(old).matchEntireCell(true).replaceAllWith(t.label);
+    });
+  });
+  return sheet;
 }
 
 function ensureSheet_(name, headers, format) {
@@ -222,7 +230,11 @@ function ensureSheet_(name, headers, format) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
     sheet.setFrozenRows(1);
     format(sheet);
+    return sheet;
   }
+  // 見出しの表記を変えたときは、既存のシートの見出しも合わせる（列の並びは変えない前提）
+  var current = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+  if (current.join('\t') !== headers.join('\t')) sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   return sheet;
 }
 
@@ -461,7 +473,10 @@ function medTypeByKey_(key) {
 }
 
 function medTypeByLabel_(label) {
-  for (var i = 0; i < MED_TYPES.length; i++) if (MED_TYPES[i].label === label) return MED_TYPES[i];
+  for (var i = 0; i < MED_TYPES.length; i++) {
+    var t = MED_TYPES[i];
+    if (t.label === label || t.oldLabels.indexOf(label) >= 0) return t;
+  }
   return null;
 }
 
