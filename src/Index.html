@@ -311,6 +311,34 @@
       <div id="period-lists"></div>
     </section>
 
+    <!-- 月次 -->
+    <section id="view-report" class="view" hidden>
+      <div class="card">
+        <h2>月ごとの PDF（A4縦）</h2>
+        <div class="small" style="margin-bottom:12px">1枚目に測定値の表、2枚目に月平均値と血圧・脈拍のグラフを載せます。PDF はドライブのフォルダ「血圧記録 PDF」に保存されます。</div>
+        <div class="row">
+          <label class="field"><span>年月 <b id="report-month-ja"></b></span><input type="month" id="report-month"></label>
+          <button type="button" class="btn primary" id="report-pdf" style="flex:1;font-size:16px;align-self:flex-end">PDFを作成</button>
+        </div>
+        <div class="status" id="report-status" role="status"></div>
+      </div>
+
+      <div class="card">
+        <h2>血圧の月平均の推移</h2>
+        <div class="small" id="monthly-source" style="margin-bottom:8px"></div>
+        <div class="legend">
+          <span><i style="border-color:var(--morning)"></i>朝 最高</span>
+          <span><i class="dash" style="border-color:var(--morning)"></i>朝 最低</span>
+          <span><i style="border-color:var(--night)"></i>夜 最高</span>
+          <span><i class="dash" style="border-color:var(--night)"></i>夜 最低</span>
+        </div>
+        <button type="button" class="btn primary" id="monthly-pdf" style="font-size:16px">PDFを作成（A4縦・1段3年分）</button>
+        <div class="status" id="monthly-status" role="status"></div>
+      </div>
+      <div id="monthly-panels"></div>
+      <div id="monthly-empty" class="muted" hidden>月平均のデータがありません。</div>
+    </section>
+
     <!-- 一覧 -->
     <section id="view-list" class="view" hidden>
       <div class="card">
@@ -332,6 +360,7 @@
     <button type="button" role="tab" data-view="chart" aria-selected="false">グラフ</button>
     <button type="button" role="tab" data-view="list" aria-selected="false">一覧</button>
     <button type="button" role="tab" data-view="meds" aria-selected="false">薬</button>
+    <button type="button" role="tab" data-view="report" aria-selected="false">月次</button>
   </nav>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
@@ -339,10 +368,10 @@
     'use strict';
 
     var state = {
-      records: [], daily: [], periods: [], medTypes: [], config: {}, today: null, nowHour: 0, rangeDays: 14,
+      records: [], daily: [], periods: [], monthly: [], medTypes: [], config: {}, today: null, nowHour: 0, rangeDays: 14,
       medInput: {}, medNote: {}, editingPeriodId: null, periodType: null
     };
-    var charts = { bp: null, pulse: null, weight: null };
+    var charts = { bp: null, pulse: null, weight: null, monthly: [] };
     var $ = function (id) { return document.getElementById(id); };
     var FIELDS = ['r1-sys', 'r1-dia', 'r1-pulse', 'r2-sys', 'r2-dia', 'r2-pulse'];
 
@@ -359,6 +388,7 @@
       state.records = data.records || [];
       state.daily = data.daily || [];
       state.periods = data.periods || [];
+      state.monthly = data.monthly || [];
       state.medTypes = data.medTypes || [];
       state.config = data.config || {};
       state.today = data.today;
@@ -641,7 +671,7 @@
           ctx.stroke();
           ctx.setLineDash([]);
           ctx.fillStyle = opts.textColor;
-          ctx.font = '11px sans-serif';
+          ctx.font = (opts.fontSize || 11) + 'px sans-serif';
           ctx.textAlign = 'right';
           ctx.textBaseline = 'bottom';
           ctx.fillText(String(ln.value), area.right - 2, py - 2);
@@ -899,20 +929,277 @@
       }).join('');
     }
 
+    // ---- 月次：PDF 用のグラフ画像 --------------------------------------------
+    // PDF 上の幅（pt）と、画像の解像度（1pt あたりの px）
+    var PDF_WIDTH_PT = 523.28;
+    var PX = 2.5;
+    var PRINT = { morning: '#2a78d6', night: '#eb6834', text: '#333333', grid: '#d9d9d9', ref: '#888888', bg: '#ffffff' };
+
+    var whiteBgPlugin = {
+      id: 'whiteBg',
+      beforeDraw: function (chart) {
+        var ctx = chart.ctx;
+        ctx.save();
+        ctx.fillStyle = PRINT.bg;
+        ctx.fillRect(0, 0, chart.width, chart.height);
+        ctx.restore();
+      }
+    };
+
+    function printDataset(label, data, color, dashed, pointStyle) {
+      return {
+        label: label, data: data, borderColor: color, backgroundColor: dashed ? PRINT.bg : color,
+        borderWidth: 1.2 * PX, borderDash: dashed ? [4 * PX, 3 * PX] : [],
+        pointStyle: pointStyle || 'circle', pointRadius: 1.8 * PX, pointBorderWidth: 1 * PX,
+        spanGaps: true, tension: 0
+      };
+    }
+
+    function printOptions(tickLabel, refLines, extra) {
+      var font = function (pt) { return { size: pt * PX }; };
+      extra = extra || {};
+      return {
+        responsive: false, animation: false, devicePixelRatio: 1,
+        layout: { padding: { top: 2 * PX, right: 6 * PX, bottom: 0, left: 0 } },
+        scales: {
+          x: {
+            grid: { display: true, color: extra.xGridColor || 'transparent', lineWidth: 1 * PX },
+            border: { color: PRINT.grid },
+            ticks: { color: PRINT.text, font: font(8), maxRotation: 0, autoSkip: extra.autoSkip !== false,
+              callback: function (v, i) { return tickLabel(i); } }
+          },
+          y: {
+            min: extra.min, max: extra.max, grace: extra.min === undefined ? '5%' : 0,
+            grid: { color: PRINT.grid, lineWidth: 0.5 * PX },
+            border: { display: false },
+            ticks: { color: PRINT.text, font: font(8), stepSize: extra.step, maxTicksLimit: extra.step ? undefined : 7 }
+          }
+        },
+        plugins: {
+          legend: { display: true, position: 'top', align: 'start',
+            labels: { color: PRINT.text, font: font(8), boxWidth: 18 * PX, boxHeight: 1.5 * PX } },
+          tooltip: { enabled: false },
+          refLines: { lines: refLines || [], color: PRINT.ref, textColor: PRINT.text, fontSize: 7 * PX }
+        }
+      };
+    }
+
+    function chartImage(data, options, heightPt) {
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.round(PDF_WIDTH_PT * PX);
+      canvas.height = Math.round(heightPt * PX);
+      var chart = new Chart(canvas, { type: 'line', data: data, options: options, plugins: [refLinePlugin, whiteBgPlugin] });
+      var url = canvas.toDataURL('image/png');
+      chart.destroy();
+      return url;
+    }
+
+    function refLines() {
+      var refs = [];
+      if (state.config.refSys) refs.push({ value: state.config.refSys });
+      if (state.config.refDia) refs.push({ value: state.config.refDia });
+      return refs;
+    }
+
+    function monthDates(month) {
+      var p = month.split('-').map(Number);
+      var n = new Date(Date.UTC(p[0], p[1], 0)).getUTCDate();
+      var dates = [];
+      for (var d = 1; d <= n; d++) dates.push(month + '-' + ('0' + d).slice(-2));
+      return dates;
+    }
+
+    function monthReportImages(month) {
+      var dates = monthDates(month);
+      var labels = dates.map(function (d) { return String(Number(d.slice(8))); });
+      var tick = function (i) { return labels[i]; };
+      var bp = chartImage({
+        labels: labels,
+        datasets: [
+          printDataset('朝 最高', series(dates, '朝', 'sys'), PRINT.morning, false),
+          printDataset('朝 最低', series(dates, '朝', 'dia'), PRINT.morning, true),
+          printDataset('夜 最高', series(dates, '夜', 'sys'), PRINT.night, false, 'rectRot'),
+          printDataset('夜 最低', series(dates, '夜', 'dia'), PRINT.night, true, 'rectRot')
+        ]
+      }, printOptions(tick, refLines()), 300);
+      var pulse = chartImage({
+        labels: labels,
+        datasets: [
+          printDataset('朝', series(dates, '朝', 'pulse'), PRINT.morning, false),
+          printDataset('夜', series(dates, '夜', 'pulse'), PRINT.night, false, 'rectRot')
+        ]
+      }, printOptions(tick, []), 200);
+      return { bp: bp, pulse: pulse };
+    }
+
+    function showReportMonthJa() {
+      var v = $('report-month').value;
+      $('report-month-ja').textContent = /^\d{4}-\d{2}$/.test(v) ? Number(v.slice(0, 4)) + '年' + Number(v.slice(5)) + '月' : '';
+    }
+
+    function pdfLink(res) {
+      return '<a href="' + esc(res.url) + '" target="_blank" rel="noopener">' + esc(res.name) + ' を開く</a>';
+    }
+
+    function onMonthReportPdf() {
+      var month = $('report-month').value;
+      var el = $('report-status');
+      if (!/^\d{4}-\d{2}$/.test(month)) { el.className = 'status err'; el.textContent = '年月を選んでください。'; return; }
+      var hasData = state.records.some(function (r) { return r.date.slice(0, 7) === month; });
+      if (!hasData) { el.className = 'status err'; el.textContent = 'この月の血圧の記録がありません。'; return; }
+      $('report-pdf').disabled = true;
+      el.className = 'status';
+      el.textContent = 'PDFを作成中…（10〜20秒ほどかかります）';
+      call('createMonthlyReportPdf', month, monthReportImages(month)).then(function (res) {
+        el.className = 'status ok';
+        el.innerHTML = '作成しました：' + pdfLink(res);
+      }).catch(function (e) {
+        el.className = 'status err';
+        el.textContent = errMsg(e);
+      }).then(function () { $('report-pdf').disabled = false; });
+    }
+
+    // ---- 月次：月平均の推移（1段 = 3年） -------------------------------------
+    function monthlyPanels() {
+      var list = state.monthly;
+      if (!list.length) return [];
+      var y0 = Number(list[0].month.slice(0, 4));
+      var y1 = Number(list[list.length - 1].month.slice(0, 4));
+      var panels = [];
+      for (var y = y0; y <= y1; y += 3) {
+        var months = [];
+        for (var yy = y; yy < y + 3; yy++) for (var mm = 1; mm <= 12; mm++) months.push(yy + '-' + ('0' + mm).slice(-2));
+        panels.push({ title: '血圧の月平均　' + y + '年〜' + (y + 2) + '年', months: months });
+      }
+      return panels;
+    }
+
+    function monthlyMap() {
+      var map = {};
+      state.monthly.forEach(function (m) { map[m.month] = m; });
+      return map;
+    }
+
+    function monthlySeries(map, months, session, key) {
+      return months.map(function (m) { var x = map[m] && map[m][session]; return x && x[key] !== null ? x[key] : null; });
+    }
+
+    // 全段で同じ縦軸にする（段どうしを比べやすくするため）
+    function monthlyYRange() {
+      var vals = [];
+      state.monthly.forEach(function (m) {
+        ['morning', 'night'].forEach(function (s) { if (m[s]) vals.push(m[s].sys, m[s].dia); });
+      });
+      refLines().forEach(function (r) { vals.push(r.value); });
+      vals = vals.filter(function (v) { return v !== null && v !== undefined; });
+      return { min: Math.floor((Math.min.apply(null, vals) - 5) / 10) * 10, max: Math.ceil((Math.max.apply(null, vals) + 5) / 10) * 10 };
+    }
+
+    function monthTick(months) {
+      return function (i) {
+        var m = Number(months[i].slice(5));
+        if (m === 1) return months[i].slice(0, 4) + '年';
+        return m % 3 === 1 ? m + '月' : '';
+      };
+    }
+
+    function monthlyDatasets(map, months, make, colors) {
+      return [
+        make('朝 最高', monthlySeries(map, months, 'morning', 'sys'), colors.morning, false),
+        make('朝 最低', monthlySeries(map, months, 'morning', 'dia'), colors.morning, true),
+        make('夜 最高', monthlySeries(map, months, 'night', 'sys'), colors.night, false, 'rectRot'),
+        make('夜 最低', monthlySeries(map, months, 'night', 'dia'), colors.night, true, 'rectRot')
+      ];
+    }
+
+    function renderMonthlyPanels() {
+      if (typeof Chart === 'undefined') return;
+      charts.monthly.forEach(function (c) { c.destroy(); });
+      charts.monthly = [];
+      var panels = monthlyPanels();
+      $('monthly-empty').hidden = panels.length > 0;
+      $('monthly-pdf').disabled = !panels.length;
+      var imported = state.monthly.filter(function (m) { return m.source === 'import'; });
+      var app = state.monthly.filter(function (m) { return m.source === 'app'; });
+      var ym = function (m) { return Number(m.slice(0, 4)) + '年' + Number(m.slice(5)) + '月'; };
+      var src = [];
+      if (imported.length) src.push('取り込み値：' + ym(imported[0].month) + '〜' + ym(imported[imported.length - 1].month));
+      if (app.length) src.push('アプリの記録から計算：' + ym(app[0].month) + '〜' + ym(app[app.length - 1].month));
+      $('monthly-source').textContent = src.join(' ／ ') + (src.length ? '（同じ月は取り込み値を優先）' : '');
+
+      $('monthly-panels').innerHTML = panels.map(function (p, i) {
+        return '<div class="card"><h2>' + esc(p.title) + '</h2><div class="chart-box"><canvas id="monthly-chart-' + i + '"></canvas></div></div>';
+      }).join('');
+      var map = monthlyMap(), range = monthlyYRange();
+      var colors = { morning: cssVar('--morning'), night: cssVar('--night') };
+      panels.forEach(function (p, i) {
+        var opts = baseOptions(p.months.map(function (m) { return m + '-01'; }), refLines());
+        // スマホ幅では月の目盛りが重なるので、画面では年だけ表示する
+        opts.scales.x.ticks.autoSkip = false;
+        opts.scales.x.ticks.callback = function (v, j) { return p.months[j].slice(5) === '01' ? p.months[j].slice(0, 4) : ''; };
+        opts.scales.x.grid = { display: true, color: function (ctx) { return ctx.index % 12 === 0 ? cssVar('--grid') : 'transparent'; } };
+        opts.scales.y.min = range.min;
+        opts.scales.y.max = range.max;
+        opts.plugins.tooltip.callbacks.title = function (items) {
+          var m = p.months[items[0].dataIndex];
+          return Number(m.slice(0, 4)) + '年' + Number(m.slice(5)) + '月';
+        };
+        var ds = monthlyDatasets(map, p.months, function (label, data, color, dashed, ps) {
+          var d = dataset(label, data, color, dashed, ps);
+          d.pointRadius = 0;
+          d.pointHoverRadius = 4;
+          return d;
+        }, colors);
+        charts.monthly.push(new Chart($('monthly-chart-' + i), { type: 'line', data: { labels: p.months, datasets: ds }, options: opts, plugins: [refLinePlugin] }));
+      });
+    }
+
+    function onMonthlyChartPdf() {
+      var panels = monthlyPanels();
+      if (!panels.length) return;
+      var el = $('monthly-status');
+      $('monthly-pdf').disabled = true;
+      el.className = 'status';
+      el.textContent = 'PDFを作成中…（10〜20秒ほどかかります）';
+      var map = monthlyMap(), range = monthlyYRange();
+      var images = panels.map(function (p) {
+        var opts = printOptions(monthTick(p.months), refLines(), {
+          min: range.min, max: range.max, step: 10, autoSkip: false,
+          xGridColor: function (ctx) { return ctx.index % 12 === 0 ? PRINT.grid : 'transparent'; }
+        });
+        var ds = monthlyDatasets(map, p.months, function (label, data, color, dashed, ps) {
+          var d = printDataset(label, data, color, dashed, ps);
+          d.pointRadius = 1.4 * PX;
+          return d;
+        }, PRINT);
+        return { title: p.title, image: chartImage({ labels: p.months, datasets: ds }, opts, 340) };
+      });
+      var first = state.monthly[0].month.slice(0, 4), last = state.monthly[state.monthly.length - 1].month.slice(0, 4);
+      call('createMonthlyChartPdf', images, first + '-' + last).then(function (res) {
+        el.className = 'status ok';
+        el.innerHTML = '作成しました：' + pdfLink(res);
+      }).catch(function (e) {
+        el.className = 'status err';
+        el.textContent = errMsg(e);
+      }).then(function () { $('monthly-pdf').disabled = false; });
+    }
+
     function renderAll() {
       renderSummary();
       renderList();
       renderPeriodLists();
       if (!$('view-chart').hidden) renderCharts();
+      if (!$('view-report').hidden) renderMonthlyPanels();
     }
 
     // ---- タブ -------------------------------------------------------------
     function showView(name) {
-      ['input', 'chart', 'list', 'meds'].forEach(function (v) { $('view-' + v).hidden = v !== name; });
+      ['input', 'chart', 'list', 'meds', 'report'].forEach(function (v) { $('view-' + v).hidden = v !== name; });
       document.querySelectorAll('nav.tabs button').forEach(function (b) {
         b.setAttribute('aria-selected', String(b.dataset.view === name));
       });
       if (name === 'chart') renderCharts();
+      if (name === 'report') renderMonthlyPanels();
       window.scrollTo(0, 0);
     }
 
@@ -966,13 +1253,19 @@
         loadForm(tr.dataset.date, tr.dataset.session);
         showView('input');
       });
+      $('report-pdf').addEventListener('click', onMonthReportPdf);
+      $('report-month').addEventListener('input', showReportMonthJa);
+      $('monthly-pdf').addEventListener('click', onMonthlyChartPdf);
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
         if (!$('view-chart').hidden) renderCharts();
+        if (!$('view-report').hidden) renderMonthlyPanels();
       });
 
       call('getData').then(function (data) {
         applyData(data);
         resetPeriodForm();
+        $('report-month').value = state.today.slice(0, 7);
+        showReportMonthJa();
         var d = defaultDateSession();
         loadForm(d.date, d.session);
         renderAll();

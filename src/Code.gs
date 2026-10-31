@@ -7,6 +7,7 @@
  *   A:日付 B:体重 C-E:降圧剤(服用/薬品名/量) F-H:高脂血症の薬(服用/薬品名/量) I:更新日時
  * シート「薬の登録」: 1行 = 1つの薬の使用期間
  *   A:ID B:種類 C:薬品名 D:量 E:開始日 F:終了日(空=継続中) G:更新日時
+ * 月平均と PDF 作成は Report.gs
  */
 
 var SHEET_NAME = '記録';
@@ -77,6 +78,7 @@ function getData() {
     records: records,
     daily: daily,
     periods: readPeriods_(tz),
+    monthly: monthlyAverages_(records, tz), // Report.gs
     medTypes: MED_TYPES,
     config: CONFIG,
     today: Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd'),

@@ -80,6 +80,7 @@
       var j = new Date(d.getTime() + JST);
       var p = function (n) { return ('0' + n).slice(-2); };
       if (pattern === 'yyyy-MM-dd') return j.getUTCFullYear() + '-' + p(j.getUTCMonth() + 1) + '-' + p(j.getUTCDate());
+      if (pattern === 'yyyy-MM') return j.getUTCFullYear() + '-' + p(j.getUTCMonth() + 1);
       if (pattern === 'H') return String(j.getUTCHours());
       throw new Error('unsupported pattern ' + pattern);
     },
@@ -88,4 +89,113 @@
       return new Date(Date.UTC(p[0], p[1] - 1, p[2]) - JST);
     }
   };
+  root.Utilities.newBlob = function (bytes, type, name) { return { bytes: bytes, type: type, name: name }; };
+  root.Utilities.base64Decode = function (s) { return 'decoded:' + s.length; };
+
+  // ---- DocumentApp / DriveApp / PropertiesService（PDF 作成の呼び出しを記録する簡易版）----
+  // 未定義のメソッドは自分自身を返す（メソッドチェーン用）。記録したい操作だけ個別に実装する。
+  function chain(obj, log) {
+    return new Proxy(obj, {
+      get: function (t, k) {
+        if (k in t) return t[k];
+        if (typeof k !== 'string') return undefined;
+        return function () { log.push(k); return this; };
+      }
+    });
+  }
+  function makeParagraph(doc, text) {
+    var p = { text: text || '', images: [] };
+    var proxy = chain({
+      setText: function (t) { p.text = t; return proxy; },
+      appendInlineImage: function (blob) {
+        var img = { blob: blob };
+        p.images.push(img);
+        return chain({
+          getWidth: function () { return 1000; }, getHeight: function () { return 500; }, // 画像の元サイズ（px）
+          setHeight: function (h) { img.height = h; return this; }
+        }, doc.log);
+      },
+      editAsText: function () { return chain({}, doc.log); },
+      asParagraph: function () { return proxy; },
+      info: p
+    }, doc.log);
+    return proxy;
+  }
+  function makeTable(doc, rows) {
+    var table = chain({
+      rows: rows,
+      getNumRows: function () { return rows.length; },
+      getRow: function (i) {
+        return chain({
+          getNumCells: function () { return rows[i].length; },
+          getCell: function (j) {
+            var para = makeParagraph(doc, rows[i][j]);
+            return chain({
+              getText: function () { return rows[i][j]; },
+              getChild: function () { return para; },
+              editAsText: function () { return chain({}, doc.log); }
+            }, doc.log);
+          }
+        }, doc.log);
+      }
+    }, doc.log);
+    return table;
+  }
+  var docs = [];
+  root.__docs = docs;
+  root.DocumentApp = {
+    HorizontalAlignment: { LEFT: 'LEFT', CENTER: 'CENTER' },
+    VerticalAlignment: { CENTER: 'CENTER' },
+    create: function (name) {
+      var doc = { name: name, id: 'doc' + docs.length, items: [], log: [] };
+      docs.push(doc);
+      var first = makeParagraph(doc, '');
+      doc.items.push({ type: 'p', p: first.info });
+      var body = chain({
+        getChild: function () { return first; },
+        appendParagraph: function (t) { var p = makeParagraph(doc, t); doc.items.push({ type: 'p', p: p.info }); return p; },
+        appendTable: function (rows) { doc.items.push({ type: 'table', rows: rows }); return makeTable(doc, rows); },
+        appendPageBreak: function () { doc.items.push({ type: 'break' }); return this; }
+      }, doc.log);
+      return chain({ getId: function () { return doc.id; }, getBody: function () { return body; }, saveAndClose: function () { doc.closed = true; } }, doc.log);
+    }
+  };
+  var files = [];
+  root.__files = files;
+  function makeFile(name, extra) {
+    var f = { name: name, trashed: false };
+    for (var k in extra) f[k] = extra[k];
+    files.push(f);
+    return {
+      info: f,
+      getName: function () { return f.name; },
+      getUrl: function () { return 'https://drive.example/' + encodeURIComponent(f.name); },
+      getId: function () { return f.id || f.name; },
+      setTrashed: function (v) { f.trashed = v; return this; },
+      isTrashed: function () { return f.trashed; },
+      getAs: function () { return { setName: function (n) { this.name = n; return this; } }; }
+    };
+  }
+  var folders = {};
+  function makeFolder(name) {
+    var id = 'folder' + Object.keys(folders).length;
+    var folder = makeFile(name, { id: id, folder: true });
+    folder.createFile = function (blob) { return makeFile(blob.name, { parent: id }); };
+    folder.getFilesByName = function (n) {
+      var list = files.filter(function (f) { return f.parent === id && f.name === n && !f.trashed; });
+      var i = 0;
+      return { hasNext: function () { return i < list.length; }, next: function () { var f = list[i++]; return { setTrashed: function (v) { f.trashed = v; } }; } };
+    };
+    folders[id] = folder;
+    return folder;
+  }
+  root.DriveApp = {
+    getFileById: function (id) { return makeFile('temp:' + id, { temp: true }); },
+    createFolder: makeFolder,
+    getFolderById: function (id) { if (!folders[id]) throw new Error('not found'); return folders[id]; }
+  };
+  var props = {};
+  root.PropertiesService = { getScriptProperties: function () {
+    return { getProperty: function (k) { return props[k] || null; }, setProperty: function (k, v) { props[k] = v; } };
+  } };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

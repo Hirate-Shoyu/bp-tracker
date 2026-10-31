@@ -6,9 +6,10 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 function load() {
-  const ctx = vm.createContext({ console, Date, Math, Number, String, isFinite, Error, Array, Object });
+  const ctx = vm.createContext({ console, Date, Math, Number, String, isFinite, Error, Array, Object, Proxy, encodeURIComponent });
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'mock-gas.js'), 'utf8'), ctx);
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/Code.gs'), 'utf8'), ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/Report.gs'), 'utf8'), ctx);
   return ctx;
 }
 const plain = (o) => JSON.parse(JSON.stringify(o));
@@ -144,4 +145,83 @@ test('体重・服薬の項目を送らない保存では日次を変更しな�
   g.saveRecord({ date: '2026-10-31', session: '朝', r1: BP, weight: 64, meds: {} });
   const d = g.saveRecord({ date: '2026-10-31', session: '夜', r1: BP });
   assert.strictEqual(d.daily[0].weight, 64);
+});
+
+// ---- 月平均・PDF ---------------------------------------------------------
+
+const PNG = 'data:image/png;base64,AAAA';
+const bp = (sys, dia, pulse) => ({ sys, dia, pulse });
+
+test('月平均：各日の2回平均を朝・夜ごとに月で平均。取り込み値が優先される', () => {
+  const g = load();
+  g.saveRecord({ date: '2026-09-01', session: '朝', r1: bp(130, 80, 70), r2: bp(126, 78, 66) }); // 128 / 79 / 68
+  g.saveRecord({ date: '2026-09-02', session: '朝', r1: bp(120, 76, 60) });
+  g.saveRecord({ date: '2026-09-02', session: '夜', r1: bp(118, 72, 64) });
+  g.saveRecord({ date: '2026-10-01', session: '朝', r1: bp(140, 90, 70) });
+  const sheet = g.getMonthlySheet_();
+  sheet.getRange(2, 1, 3, 7).setValues([
+    ['2015-01', 135, 85, 70, 125, 78, 72],
+    [new Date(Date.UTC(2015, 1, 1) - 9 * 3600e3), 134, 84, '', '', '', ''], // 日付型で入っていても読める
+    ['2026/10', 150, 95, 75, '', '', '']                                     // 「2026/10」形式。アプリの値より優先
+  ]);
+  const m = plain(g.getData().monthly);
+  assert.deepStrictEqual(m.map((x) => x.month + ':' + x.source), ['2015-01:import', '2015-02:import', '2026-09:app', '2026-10:import']);
+  assert.deepStrictEqual(m[2].morning, { sys: 124, dia: 77.5, pulse: 64, days: 2 });
+  assert.deepStrictEqual(m[2].night, { sys: 118, dia: 72, pulse: 64, days: 1 });
+  assert.strictEqual(m[1].night, null);
+  assert.strictEqual(m[3].morning.sys, 150);
+});
+
+test('月ごとの PDF：1枚目に全日の表、2枚目に月平均とグラフ', () => {
+  const g = load();
+  g.saveRecord({ date: '2026-10-03', session: '朝', r1: bp(130, 80, 70), r2: bp(126, 78, 66) });
+  g.saveRecord({ date: '2026-10-03', session: '夜', r1: {}, r2: bp(118, 72, 64) });
+  g.saveRecord({ date: '2026-09-30', session: '朝', r1: bp(120, 70, 60) });
+  const res = g.createMonthlyReportPdf('2026-10', { bp: PNG, pulse: PNG });
+  assert.strictEqual(res.name, '血圧記録_2026-10.pdf');
+  const doc = g.__docs[0];
+  const items = doc.items;
+  assert.strictEqual(items[0].p.text, '血圧・脈拍 測定記録　2026年10月');
+  const t = items[1].rows;
+  assert.strictEqual(t.length, 2 + 31);
+  assert.deepStrictEqual(plain(t[0]), ['', '', '', '朝1回目', '', '', '朝2回目', '', '', '夜1回目', '', '', '夜2回目', '']);
+  assert.deepStrictEqual(plain(t[2 + 2]), ['3', '土', '130', '80', '70', '126', '78', '66', '', '', '', '118', '72', '64']);
+  assert.deepStrictEqual(plain(t[2]), ['1', '木', '', '', '', '', '', '', '', '', '', '', '', '']);
+  assert.ok(items.some((x) => x.type === 'break'));
+  const avg = items.find((x, i) => x.type === 'table' && i > 1).rows;
+  assert.deepStrictEqual(plain(avg), [['', '測定日数', '最高', '最低', '脈拍'], ['朝', '1', '128.0', '79.0', '68.0'], ['夜', '1', '118.0', '72.0', '64.0']]);
+  assert.strictEqual(items.filter((x) => x.type === 'p' && x.p.images.length).length, 2);
+  assert.ok(doc.log.includes('setPageWidth') && doc.log.includes('setPageHeight'));
+  // 一時ドキュメントはゴミ箱へ
+  assert.ok(g.__files.filter((f) => f.temp).every((f) => f.trashed));
+  assert.throws(() => g.createMonthlyReportPdf('2026-08', { bp: PNG, pulse: PNG }), /記録がありません/);
+  assert.throws(() => g.createMonthlyReportPdf('2026-13', {}), /年月/);
+});
+
+test('同じ名前の PDF は作り直すと古い方がゴミ箱へ、フォルダは使い回す', () => {
+  const g = load();
+  g.saveRecord({ date: '2026-10-03', session: '朝', r1: bp(130, 80, 70) });
+  g.createMonthlyReportPdf('2026-10', { bp: PNG, pulse: PNG });
+  g.createMonthlyReportPdf('2026-10', { bp: PNG, pulse: PNG });
+  const pdfs = g.__files.filter((f) => f.name === '血圧記録_2026-10.pdf');
+  assert.deepStrictEqual(plain(pdfs.map((f) => f.trashed)), [true, false]);
+  assert.strictEqual(g.__files.filter((f) => f.folder).length, 1);
+});
+
+test('月平均グラフの PDF：1ページに2段、3段目から次のページ', () => {
+  const g = load();
+  const panels = ['2015年〜2017年', '2018年〜2020年', '2021年〜2023年', '2024年〜2026年'].map((title) => ({ title, image: PNG }));
+  const res = g.createMonthlyChartPdf(panels, '2015-2026');
+  assert.strictEqual(res.name, '血圧月平均グラフ_2015-2026.pdf');
+  const kinds = g.__docs[0].items.map((x) => (x.type === 'break' ? 'BREAK' : x.p.images.length ? 'IMG' : x.p.text));
+  assert.deepStrictEqual(plain(kinds), ['2015年〜2017年', 'IMG', '2018年〜2020年', 'IMG', 'BREAK', '2021年〜2023年', 'IMG', '2024年〜2026年', 'IMG']);
+  assert.throws(() => g.createMonthlyChartPdf([], '2015-2026'), /データがありません/);
+  assert.throws(() => g.createMonthlyChartPdf([{ title: 'x', image: 'nope' }], '2015-2026'), /画像/);
+});
+
+test('グラフ画像は本文幅いっぱいに縦横比を保って貼る', () => {
+  const g = load();
+  g.createMonthlyChartPdf([{ title: 't', image: PNG }], '2015-2026');
+  const img = g.__docs[0].items.find((x) => x.type === 'p' && x.p.images.length).p.images[0];
+  assert.strictEqual(img.height, Math.round((595.28 - 72) * 0.5));
 });
