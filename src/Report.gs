@@ -2,7 +2,7 @@
  * 月平均の計算と PDF 作成（A4 縦）
  *
  * シート「月平均」: 過去の月平均値（取り込み用）。1行 = 1か月
- *   A:年月 B-D:朝(最高/最低/脈拍) E-G:夜(最高/最低/脈拍)
+ *   A:年月（2015-11、2015/11、201511 など） B-D:朝(最高/最低/脈拍) E-G:夜(最高/最低/脈拍)
  * アプリの記録から計算した月平均と合わせて使う。同じ月があれば「月平均」シートの値を優先する。
  *
  * PDF は Google ドキュメントを A4 で組み立てて変換し、ドライブのフォルダ「血圧記録 PDF」に保存する。
@@ -59,7 +59,8 @@ function sessionAverage_(avgs) {
 
 function cellToMonth_(v, tz) {
   if (v instanceof Date) return Utilities.formatDate(v, tz, 'yyyy-MM');
-  var m = String(v || '').trim().match(/^(\d{4})\s*[-\/年.]\s*(\d{1,2})/);
+  var s = String(v === null || v === undefined ? '' : v).trim();
+  var m = s.match(/^(\d{4})\s*[-\/年.]\s*(\d{1,2})/) || s.match(/^(\d{4})(\d{2})$/); // 「201511」形式も可
   if (!m || Number(m[2]) < 1 || Number(m[2]) > 12) return null;
   return m[1] + '-' + ('0' + m[2]).slice(-2);
 }

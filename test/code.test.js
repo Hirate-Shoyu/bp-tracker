@@ -164,12 +164,13 @@ test('月平均：各日の2回平均を朝・夜ごとに月で平均。取り�
     [new Date(Date.UTC(2015, 1, 1) - 9 * 3600e3), 134, 84, '', '', '', ''], // 日付型で入っていても読める
     ['2026/10', 150, 95, 75, '', '', '']                                     // 「2026/10」形式。アプリの値より優先
   ]);
+  sheet.getRange(5, 1, 2, 7).setValues([[201511, 127, 92, 79, '', '', ''], ['202400', 124, 84, 84, '', '', '']]); // 6桁の年月。月が00は無視
   const m = plain(g.getData().monthly);
-  assert.deepStrictEqual(m.map((x) => x.month + ':' + x.source), ['2015-01:import', '2015-02:import', '2026-09:app', '2026-10:import']);
-  assert.deepStrictEqual(m[2].morning, { sys: 124, dia: 77.5, pulse: 64, days: 2 });
-  assert.deepStrictEqual(m[2].night, { sys: 118, dia: 72, pulse: 64, days: 1 });
+  assert.deepStrictEqual(m.map((x) => x.month + ':' + x.source), ['2015-01:import', '2015-02:import', '2015-11:import', '2026-09:app', '2026-10:import']);
+  assert.deepStrictEqual(m[3].morning, { sys: 124, dia: 77.5, pulse: 64, days: 2 });
+  assert.deepStrictEqual(m[3].night, { sys: 118, dia: 72, pulse: 64, days: 1 });
   assert.strictEqual(m[1].night, null);
-  assert.strictEqual(m[3].morning.sys, 150);
+  assert.strictEqual(m[4].morning.sys, 150);
 });
 
 test('月ごとの PDF：1枚目に全日の表、2枚目に月平均とグラフ', () => {

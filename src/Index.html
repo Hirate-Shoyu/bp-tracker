@@ -977,7 +977,11 @@
         },
         plugins: {
           legend: { display: true, position: 'top', align: 'start',
-            labels: { color: PRINT.text, font: font(8), boxWidth: 18 * PX, boxHeight: 1.5 * PX } },
+            labels: { color: PRINT.text, font: font(8), boxWidth: 18 * PX, boxHeight: 1.5 * PX,
+              // データのない系列（例：夜の記録がない期間）は凡例に出さない
+              filter: function (item, data) {
+                return data.datasets[item.datasetIndex].data.some(function (v) { return v !== null; });
+              } } },
           tooltip: { enabled: false },
           refLines: { lines: refLines || [], color: PRINT.ref, textColor: PRINT.text, fontSize: 7 * PX }
         }
@@ -1125,7 +1129,7 @@
       var src = [];
       if (imported.length) src.push('取り込み値：' + ym(imported[0].month) + '〜' + ym(imported[imported.length - 1].month));
       if (app.length) src.push('アプリの記録から計算：' + ym(app[0].month) + '〜' + ym(app[app.length - 1].month));
-      $('monthly-source').textContent = src.join(' ／ ') + (src.length ? '（同じ月は取り込み値を優先）' : '');
+      $('monthly-source').textContent = src.join(' ／ ') + (src.length > 1 ? '（同じ月は取り込み値を優先）' : '');
 
       $('monthly-panels').innerHTML = panels.map(function (p, i) {
         return '<div class="card"><h2>' + esc(p.title) + '</h2><div class="chart-box"><canvas id="monthly-chart-' + i + '"></canvas></div></div>';
