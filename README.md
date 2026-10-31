@@ -129,7 +129,7 @@ test/                モックとテスト
 
 ## ライセンス
 
-[MIT License](LICENSE) © 2026 Hirate-Shoyu
+[MIT License](LICENSE) © 2026 Hirate Shoyu
 
 どなたでも無料で使用・改変・再配布できます（商用利用を含む）。再配布する際は、著作権表示とライセンス文を含めてください。
 本ソフトウェアは無保証で提供されます。
