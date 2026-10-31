@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="theme-color" content="#2a78d6">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f4f2;
+      --surface: #fcfcfb;
+      --border: #dddcd7;
+      --text: #0b0b0b;
+      --text-2: #52514e;
+      --text-3: #7a7974;
+      --grid: #e6e5e0;
+      --accent: #2a78d6;
+      --accent-text: #ffffff;
+      --morning: #2a78d6;
+      --night: #eb6834;
+      --ref: #8a8984;
+      --danger: #c62f2f;
+      --ok: #1d7a4b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --bg: #111110;
+        --surface: #1a1a19;
+        --border: #34332f;
+        --text: #f0efec;
+        --text-2: #c3c2b7;
+        --text-3: #94938b;
+        --grid: #2c2b28;
+        --accent: #3987e5;
+        --morning: #3987e5;
+        --night: #d95926;
+        --ref: #8f8e88;
+        --danger: #f07070;
+        --ok: #4cc28a;
+      }
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #111110; --surface: #1a1a19; --border: #34332f; --text: #f0efec; --text-2: #c3c2b7;
+      --text-3: #94938b; --grid: #2c2b28; --accent: #3987e5; --morning: #3987e5; --night: #d95926;
+      --ref: #8f8e88; --danger: #f07070; --ok: #4cc28a;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+      -webkit-text-size-adjust: 100%;
+      padding-bottom: calc(72px + env(safe-area-inset-bottom));
+    }
+    header {
+      position: sticky; top: 0; z-index: 5;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      padding-top: calc(12px + env(safe-area-inset-top));
+    }
+    header h1 { margin: 0; font-size: 18px; }
+    main { max-width: 640px; margin: 0 auto; padding: 16px; }
+    .view[hidden] { display: none; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .card h2 { margin: 0 0 12px; font-size: 16px; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .muted { color: var(--text-2); font-size: 14px; }
+    .small { font-size: 13px; color: var(--text-3); }
+
+    label.field { display: block; flex: 1; min-width: 0; }
+    label.field span { display: block; font-size: 13px; color: var(--text-2); margin-bottom: 4px; }
+    input, textarea {
+      width: 100%;
+      font: inherit;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    input.num { font-size: 24px; font-variant-numeric: tabular-nums; text-align: center; padding: 8px 4px; }
+    .readings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+
+    .seg { display: flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .seg button {
+      flex: 1; font: inherit; padding: 10px 8px; border: 0; background: var(--surface); color: var(--text-2); cursor: pointer;
+    }
+    .seg button + button { border-left: 1px solid var(--border); }
+    .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+
+    .btn {
+      font: inherit; border-radius: 10px; padding: 12px 16px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--text); cursor: pointer;
+    }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; width: 100%; font-size: 18px; }
+    .btn.danger { color: var(--danger); }
+    .btn:disabled { opacity: .5; cursor: default; }
+
+    .status { min-height: 1.5em; margin-top: 8px; font-size: 14px; }
+    .status.err { color: var(--danger); }
+    .status.ok { color: var(--ok); }
+    .badge { font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--border); color: var(--text-2); }
+
+    .avg-line { font-variant-numeric: tabular-nums; }
+
+    nav.tabs {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+      display: flex; background: var(--surface); border-top: 1px solid var(--border);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    nav.tabs button {
+      flex: 1; font: inherit; font-size: 14px; padding: 12px 4px; border: 0; background: none; color: var(--text-3); cursor: pointer;
+    }
+    nav.tabs button[aria-selected="true"] { color: var(--accent); font-weight: 600; }
+
+    .chart-box { position: relative; height: 280px; }
+    .chart-box.short { height: 200px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
+    .legend i { display: inline-block; width: 22px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+    .legend i.dash { border-top-style: dashed; }
+
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
+    th, td { padding: 8px 6px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+    th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+    th { color: var(--text-2); font-weight: 600; font-size: 13px; }
+    tbody tr { cursor: pointer; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+    .table-wrap { overflow-x: auto; }
+
+    .loading { text-align: center; padding: 48px 0; color: var(--text-2); }
+  </style>
+</head>
+<body>
+  <header><h1>血圧・脈拍の記録</h1></header>
+
+  <main>
+    <div id="loading" class="loading">読み込み中…</div>
+
+    <!-- 入力 -->
+    <section id="view-input" class="view" hidden>
+      <div class="card">
+        <div class="row" style="margin-bottom:12px">
+          <label class="field"><span>日付</span><input type="date" id="date"></label>
+          <div style="flex:1;min-width:140px">
+            <span class="small" style="display:block;margin-bottom:4px">時間帯</span>
+            <div class="seg" id="session" role="group" aria-label="時間帯">
+              <button type="button" data-v="朝" aria-pressed="true">朝</button>
+              <button type="button" data-v="夜" aria-pressed="false">夜</button>
+            </div>
+          </div>
+        </div>
+        <div id="existing" class="small"></div>
+      </div>
+
+      <div class="card">
+        <h2>1回目</h2>
+        <div class="readings">
+          <label class="field"><span>最高</span><input class="num" id="r1-sys" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off"></label>
+          <label class="field"><span>最低</span><input class="num" id="r1-dia" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off"></label>
+          <label class="field"><span>脈拍</span><input class="num" id="r1-pulse" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off"></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>2回目</h2>
+        <div class="readings">
+          <label class="field"><span>最高</span><input class="num" id="r2-sys" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off"></label>
+          <label class="field"><span>最低</span><input class="num" id="r2-dia" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off"></label>
+          <label class="field"><span>脈拍</span><input class="num" id="r2-pulse" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off"></label>
+        </div>
+        <div class="avg-line muted" id="avg-preview" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card">
+        <label class="field"><span>メモ（任意）</span><textarea id="memo" rows="2" maxlength="500"></textarea></label>
+      </div>
+
+      <button type="button" class="btn primary" id="save">保存</button>
+      <div class="status" id="status" role="status"></div>
+      <div style="text-align:right;margin-top:8px">
+        <button type="button" class="btn danger" id="delete" hidden>この記録を削除</button>
+      </div>
+    </section>
+
+    <!-- グラフ -->
+    <section id="view-chart" class="view" hidden>
+      <div class="seg" id="range" role="group" aria-label="期間" style="margin-bottom:16px">
+        <button type="button" data-days="14" aria-pressed="true">2週</button>
+        <button type="button" data-days="30" aria-pressed="false">1か月</button>
+        <button type="button" data-days="90" aria-pressed="false">3か月</button>
+        <button type="button" data-days="365" aria-pressed="false">1年</button>
+        <button type="button" data-days="0" aria-pressed="false">全期間</button>
+      </div>
+
+      <div class="card">
+        <h2>期間平均</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>時間帯</th><th>日数</th><th>最高</th><th>最低</th><th>脈拍</th></tr></thead>
+            <tbody id="summary"></tbody>
+          </table>
+        </div>
+        <div class="small" style="margin-top:8px">各日の2回の平均値を、さらに期間で平均した値です。</div>
+      </div>
+
+      <div class="card">
+        <h2>血圧（朝・夜それぞれ2回の平均, mmHg）</h2>
+        <div class="legend">
+          <span><i style="border-color:var(--morning)"></i>朝 最高</span>
+          <span><i class="dash" style="border-color:var(--morning)"></i>朝 最低</span>
+          <span><i style="border-color:var(--night)"></i>夜 最高</span>
+          <span><i class="dash" style="border-color:var(--night)"></i>夜 最低</span>
+          <span id="ref-legend"><i class="dash" style="border-color:var(--ref);border-top-width:1px"></i>参考線</span>
+        </div>
+        <div class="chart-box"><canvas id="bp-chart" aria-label="血圧の推移グラフ" role="img"></canvas></div>
+      </div>
+
+      <div class="card">
+        <h2>脈拍（朝・夜それぞれ2回の平均, 回/分）</h2>
+        <div class="legend">
+          <span><i style="border-color:var(--morning)"></i>朝</span>
+          <span><i style="border-color:var(--night)"></i>夜</span>
+        </div>
+        <div class="chart-box short"><canvas id="pulse-chart" aria-label="脈拍の推移グラフ" role="img"></canvas></div>
+      </div>
+    </section>
+
+    <!-- 一覧 -->
+    <section id="view-list" class="view" hidden>
+      <div class="card">
+        <h2>記録一覧（2回の平均）</h2>
+        <div class="small" style="margin-bottom:8px">行をタップすると編集できます。</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>日付</th><th>時間帯</th><th>最高</th><th>最低</th><th>脈拍</th></tr></thead>
+            <tbody id="list"></tbody>
+          </table>
+        </div>
+        <div id="list-empty" class="muted" hidden>まだ記録がありません。</div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabs" role="tablist">
+    <button type="button" role="tab" data-view="input" aria-selected="true">入力</button>
+    <button type="button" role="tab" data-view="chart" aria-selected="false">グラフ</button>
+    <button type="button" role="tab" data-view="list" aria-selected="false">一覧</button>
+  </nav>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+  <script>
+    'use strict';
+
+    var state = { records: [], config: {}, today: null, nowHour: 0, rangeDays: 14 };
+    var charts = { bp: null, pulse: null };
+    var $ = function (id) { return document.getElementById(id); };
+    var FIELDS = ['r1-sys', 'r1-dia', 'r1-pulse', 'r2-sys', 'r2-dia', 'r2-pulse'];
+
+    // ---- サーバー呼び出し -------------------------------------------------
+    function call(fn) {
+      var args = Array.prototype.slice.call(arguments, 1);
+      return new Promise(function (resolve, reject) {
+        var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+        runner[fn].apply(runner, args);
+      });
+    }
+
+    function applyData(data) {
+      state.records = data.records || [];
+      state.config = data.config || {};
+      state.today = data.today;
+      state.nowHour = data.nowHour;
+    }
+
+    // ---- 日付ユーティリティ（'yyyy-MM-dd' 文字列で扱う）-------------------
+    function addDays(s, n) {
+      var p = s.split('-').map(Number);
+      var d = new Date(Date.UTC(p[0], p[1] - 1, p[2] + n));
+      return d.toISOString().slice(0, 10);
+    }
+    function shortDate(s) {
+      var p = s.split('-');
+      return Number(p[1]) + '/' + Number(p[2]);
+    }
+    var WD = ['日', '月', '火', '水', '木', '金', '土'];
+    function weekday(s) {
+      var p = s.split('-').map(Number);
+      return WD[new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay()];
+    }
+
+    function findRecord(date, session) {
+      for (var i = 0; i < state.records.length; i++) {
+        var r = state.records[i];
+        if (r.date === date && r.session === session) return r;
+      }
+      return null;
+    }
+
+    function fmt(v) { return v === null || v === undefined ? '—' : (Math.round(v * 10) / 10).toFixed(1).replace(/\.0$/, ''); }
+
+    // ---- 入力画面 ---------------------------------------------------------
+    function currentSession() {
+      return document.querySelector('#session button[aria-pressed="true"]').dataset.v;
+    }
+    function setSession(v) {
+      document.querySelectorAll('#session button').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.dataset.v === v));
+      });
+    }
+
+    // 0〜3時台は前日の夜、4〜14時台は朝、15時以降は夜 を初期値にする
+    function defaultDateSession() {
+      var h = state.nowHour;
+      if (h < 4) return { date: addDays(state.today, -1), session: '夜' };
+      return { date: state.today, session: h < 15 ? '朝' : '夜' };
+    }
+
+    function loadForm(date, session) {
+      $('date').value = date;
+      setSession(session);
+      var rec = findRecord(date, session);
+      var put = function (prefix, r) {
+        $(prefix + '-sys').value = r && r.sys !== null ? r.sys : '';
+        $(prefix + '-dia').value = r && r.dia !== null ? r.dia : '';
+        $(prefix + '-pulse').value = r && r.pulse !== null ? r.pulse : '';
+      };
+      put('r1', rec && rec.r1);
+      put('r2', rec && rec.r2);
+      $('memo').value = rec ? rec.memo : '';
+      $('existing').innerHTML = rec
+        ? '<span class="badge">保存済み</span> 内容を変更して保存すると上書きします。'
+        : '新しい記録です。';
+      $('delete').hidden = !rec;
+      $('save').textContent = rec ? '上書き保存' : '保存';
+      setStatus('');
+      updateAvgPreview();
+    }
+
+    function readForm() {
+      var g = function (id) { return $(id).value.trim(); };
+      return {
+        date: $('date').value,
+        session: currentSession(),
+        r1: { sys: g('r1-sys'), dia: g('r1-dia'), pulse: g('r1-pulse') },
+        r2: { sys: g('r2-sys'), dia: g('r2-dia'), pulse: g('r2-pulse') },
+        memo: $('memo').value
+      };
+    }
+
+    function updateAvgPreview() {
+      var f = readForm();
+      var avg = function (k) {
+        var vals = [f.r1[k], f.r2[k]].filter(function (v) { return v !== ''; }).map(Number);
+        if (!vals.length) return null;
+        return vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+      };
+      var s = avg('sys'), d = avg('dia'), p = avg('pulse');
+      $('avg-preview').textContent = (s === null && d === null && p === null)
+        ? ''
+        : '平均  ' + fmt(s) + ' / ' + fmt(d) + ' mmHg   脈拍 ' + fmt(p);
+    }
+
+    function setStatus(msg, kind) {
+      var el = $('status');
+      el.textContent = msg;
+      el.className = 'status' + (kind ? ' ' + kind : '');
+    }
+
+    function onSave() {
+      var input = readForm();
+      if (!input.date) { setStatus('日付を入力してください。', 'err'); return; }
+      $('save').disabled = true;
+      setStatus('保存中…');
+      call('saveRecord', input).then(function (data) {
+        applyData(data);
+        loadForm(input.date, input.session);
+        setStatus(input.date + '（' + input.session + '）を保存しました。', 'ok');
+        renderAll();
+      }).catch(function (e) {
+        setStatus(errMsg(e), 'err');
+      }).then(function () { $('save').disabled = false; });
+    }
+
+    function onDelete() {
+      var date = $('date').value, session = currentSession();
+      if (!confirm(date + '（' + session + '）の記録を削除しますか？')) return;
+      $('delete').disabled = true;
+      call('deleteRecord', date, session).then(function (data) {
+        applyData(data);
+        loadForm(date, session);
+        setStatus('削除しました。', 'ok');
+        renderAll();
+      }).catch(function (e) {
+        setStatus(errMsg(e), 'err');
+      }).then(function () { $('delete').disabled = false; });
+    }
+
+    function errMsg(e) {
+      var m = (e && e.message) || String(e);
+      return m.replace(/^Exception:\s*/, '');
+    }
+
+    // 2桁目が「1」以外なら2桁、そうでなければ3桁で次の欄へ自動移動
+    function onNumInput(ev) {
+      var el = ev.target;
+      el.value = el.value.replace(/[^0-9]/g, '');
+      var v = el.value;
+      var done = v.length >= 3 || (v.length === 2 && v[0] !== '1');
+      var idx = FIELDS.indexOf(el.id);
+      if (done && idx >= 0 && idx < FIELDS.length - 1) $(FIELDS[idx + 1]).focus();
+      updateAvgPreview();
+    }
+
+    // ---- グラフ -----------------------------------------------------------
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    function rangeDates() {
+      var end = state.today;
+      if (state.records.length) {
+        var last = state.records[state.records.length - 1].date;
+        if (last > end) end = last;
+      }
+      var start;
+      if (state.rangeDays > 0) {
+        start = addDays(end, -(state.rangeDays - 1));
+      } else {
+        start = state.records.length ? state.records[0].date : end;
+      }
+      var dates = [];
+      for (var d = start; d <= end; d = addDays(d, 1)) dates.push(d);
+      return dates;
+    }
+
+    // 参考線（水平の点線）を描くプラグイン
+    var refLinePlugin = {
+      id: 'refLines',
+      afterDatasetsDraw: function (chart, args, opts) {
+        var lines = (opts && opts.lines) || [];
+        if (!lines.length) return;
+        var y = chart.scales.y, area = chart.chartArea, ctx = chart.ctx;
+        ctx.save();
+        lines.forEach(function (ln) {
+          if (ln.value < y.min || ln.value > y.max) return;
+          var py = y.getPixelForValue(ln.value);
+          ctx.strokeStyle = opts.color;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(area.left, py);
+          ctx.lineTo(area.right, py);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = opts.textColor;
+          ctx.font = '11px sans-serif';
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(String(ln.value), area.right - 2, py - 2);
+        });
+        ctx.restore();
+      }
+    };
+
+    function series(dates, session, key) {
+      var map = {};
+      state.records.forEach(function (r) { if (r.session === session) map[r.date] = r.avg[key]; });
+      return dates.map(function (d) { return map[d] === undefined ? null : map[d]; });
+    }
+
+    function dataset(label, data, color, dashed, pointStyle) {
+      return {
+        label: label,
+        data: data,
+        borderColor: color,
+        backgroundColor: dashed ? cssVar('--surface') : color,
+        borderWidth: 2,
+        borderDash: dashed ? [6, 4] : [],
+        pointStyle: pointStyle || 'circle',
+        pointRadius: data.length > 120 ? 0 : 4,
+        pointHoverRadius: 6,
+        pointBorderWidth: 2,
+        pointHitRadius: 12,
+        spanGaps: true,
+        tension: 0
+      };
+    }
+
+    function baseOptions(dates, refLines) {
+      var text2 = cssVar('--text-2'), grid = cssVar('--grid');
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { color: grid },
+            ticks: {
+              color: text2, maxRotation: 0, autoSkip: true, autoSkipPadding: 12,
+              callback: function (v, i) { return shortDate(dates[i]); }
+            }
+          },
+          y: {
+            grid: { color: grid },
+            border: { display: false },
+            ticks: { color: text2, maxTicksLimit: 6 },
+            grace: '5%'
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: function (items) {
+                var d = dates[items[0].dataIndex];
+                return shortDate(d) + '（' + weekday(d) + '）';
+              },
+              label: function (item) {
+                return item.dataset.label + ': ' + (item.raw === null ? '—' : fmt(item.raw));
+              }
+            }
+          },
+          refLines: { lines: refLines || [], color: cssVar('--ref'), textColor: text2 }
+        }
+      };
+    }
+
+    function renderCharts() {
+      if (typeof Chart === 'undefined') return;
+      var dates = rangeDates();
+      var labels = dates.map(shortDate);
+      var morning = cssVar('--morning'), night = cssVar('--night');
+      var refs = [];
+      if (state.config.refSys) refs.push({ value: state.config.refSys });
+      if (state.config.refDia) refs.push({ value: state.config.refDia });
+      $('ref-legend').hidden = !refs.length;
+
+      var bpData = {
+        labels: labels,
+        datasets: [
+          dataset('朝 最高', series(dates, '朝', 'sys'), morning, false),
+          dataset('朝 最低', series(dates, '朝', 'dia'), morning, true),
+          dataset('夜 最高', series(dates, '夜', 'sys'), night, false, 'rectRot'),
+          dataset('夜 最低', series(dates, '夜', 'dia'), night, true, 'rectRot')
+        ]
+      };
+      var pulseData = {
+        labels: labels,
+        datasets: [
+          dataset('朝', series(dates, '朝', 'pulse'), morning, false),
+          dataset('夜', series(dates, '夜', 'pulse'), night, false, 'rectRot')
+        ]
+      };
+
+      if (charts.bp) charts.bp.destroy();
+      if (charts.pulse) charts.pulse.destroy();
+      charts.bp = new Chart($('bp-chart'), { type: 'line', data: bpData, options: baseOptions(dates, refs), plugins: [refLinePlugin] });
+      charts.pulse = new Chart($('pulse-chart'), { type: 'line', data: pulseData, options: baseOptions(dates, []), plugins: [refLinePlugin] });
+    }
+
+    function renderSummary() {
+      var dates = rangeDates();
+      var start = dates[0], end = dates[dates.length - 1];
+      var rows = ['朝', '夜'].map(function (session) {
+        var recs = state.records.filter(function (r) { return r.session === session && r.date >= start && r.date <= end; });
+        var mean = function (k) {
+          var v = recs.map(function (r) { return r.avg[k]; }).filter(function (x) { return x !== null; });
+          return v.length ? v.reduce(function (a, b) { return a + b; }, 0) / v.length : null;
+        };
+        var color = session === '朝' ? 'var(--morning)' : 'var(--night)';
+        return '<tr><td><span class="dot" style="background:' + color + '"></span>' + session + '</td>' +
+          '<td>' + recs.length + '</td><td>' + fmt(mean('sys')) + '</td><td>' + fmt(mean('dia')) + '</td><td>' + fmt(mean('pulse')) + '</td></tr>';
+      });
+      $('summary').innerHTML = rows.join('');
+    }
+
+    // ---- 一覧 -------------------------------------------------------------
+    function renderList() {
+      var recs = state.records.slice().reverse();
+      $('list-empty').hidden = recs.length > 0;
+      $('list').innerHTML = recs.map(function (r) {
+        var color = r.session === '朝' ? 'var(--morning)' : 'var(--night)';
+        var n = (r.r1 ? 1 : 0) + (r.r2 ? 1 : 0);
+        return '<tr data-date="' + r.date + '" data-session="' + r.session + '">' +
+          '<td>' + shortDate(r.date) + '（' + weekday(r.date) + '）</td>' +
+          '<td><span class="dot" style="background:' + color + '"></span>' + r.session + (n < 2 ? ' <span class="small">(' + n + '回)</span>' : '') + '</td>' +
+          '<td>' + fmt(r.avg.sys) + '</td><td>' + fmt(r.avg.dia) + '</td><td>' + fmt(r.avg.pulse) + '</td></tr>';
+      }).join('');
+    }
+
+    function renderAll() {
+      renderSummary();
+      renderList();
+      if (!$('view-chart').hidden) renderCharts();
+    }
+
+    // ---- タブ -------------------------------------------------------------
+    function showView(name) {
+      ['input', 'chart', 'list'].forEach(function (v) { $('view-' + v).hidden = v !== name; });
+      document.querySelectorAll('nav.tabs button').forEach(function (b) {
+        b.setAttribute('aria-selected', String(b.dataset.view === name));
+      });
+      if (name === 'chart') renderCharts();
+      window.scrollTo(0, 0);
+    }
+
+    // ---- 初期化 -----------------------------------------------------------
+    function init() {
+      document.querySelectorAll('nav.tabs button').forEach(function (b) {
+        b.addEventListener('click', function () { showView(b.dataset.view); });
+      });
+      document.querySelectorAll('#session button').forEach(function (b) {
+        b.addEventListener('click', function () { loadForm($('date').value, b.dataset.v); });
+      });
+      document.querySelectorAll('#range button').forEach(function (b) {
+        b.addEventListener('click', function () {
+          document.querySelectorAll('#range button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+          state.rangeDays = Number(b.dataset.days);
+          renderSummary();
+          renderCharts();
+        });
+      });
+      $('date').addEventListener('change', function () { if ($('date').value) loadForm($('date').value, currentSession()); });
+      FIELDS.forEach(function (id) { $(id).addEventListener('input', onNumInput); });
+      $('save').addEventListener('click', onSave);
+      $('delete').addEventListener('click', onDelete);
+      $('list').addEventListener('click', function (ev) {
+        var tr = ev.target.closest('tr');
+        if (!tr) return;
+        loadForm(tr.dataset.date, tr.dataset.session);
+        showView('input');
+      });
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
+        if (!$('view-chart').hidden) renderCharts();
+      });
+
+      call('getData').then(function (data) {
+        applyData(data);
+        var d = defaultDateSession();
+        loadForm(d.date, d.session);
+        renderAll();
+        $('loading').hidden = true;
+        showView('input');
+      }).catch(function (e) {
+        $('loading').textContent = '読み込みに失敗しました：' + errMsg(e);
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>

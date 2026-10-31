@@ -1,0 +1,8 @@
+{
+  "name": "bp-tracker",
+  "private": true,
+  "description": "朝夜の血圧・脈拍を Google シートに記録し、平均をグラフ表示する Apps Script Web アプリ",
+  "scripts": {
+    "test": "node --test test/code.test.js"
+  }
+}
